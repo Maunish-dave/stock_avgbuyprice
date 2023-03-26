@@ -1,6 +1,6 @@
 
 from rest_framework import serializers
-from .models import StockActions, SplitAction
+from .models import StockActions, SplitAction, Holding
 
 
 class StockaActionsSerializer(serializers.ModelSerializer):
@@ -13,8 +13,6 @@ class StockaActionsSerializer(serializers.ModelSerializer):
                   'quantity',
                   'price']
 
-
-
 class SpiltActionsSerializer(serializers.ModelSerializer):
     
     class Meta:
@@ -22,3 +20,14 @@ class SpiltActionsSerializer(serializers.ModelSerializer):
         fields = [
                   'id',
                   'ratio']
+
+
+class HoldingSerializer(serializers.ModelSerializer):
+    
+    class Meta:
+        model = Holding
+        fields = [
+                  'id',
+                  'quantity',
+                  'amount_invested',
+                  'avg_buy_price']
