@@ -5,25 +5,39 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import JSONParser
-from rest_framework.generics import ListCreateAPIView, ListAPIView
-from rest_framework.permissions import AllowAny
+from rest_framework.generics import ListCreateAPIView, ListAPIView, CreateAPIView
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from .models import StockActions, SplitAction, Holding
-from .serializers import StockaActionsSerializer,SpiltActionsSerializer,HoldingSerializer
+from .serializers import StockaActionsSerializer,SpiltActionsSerializer,HoldingSerializer, UserSerializer
 
 class Home(APIView):
+    """ Just a testing API"""
     permission_classes = (AllowAny,)
     
     def get(self,request):
         return Response({"message":"This is a home page"}, status=status.HTTP_200_OK)
 
 
+class CreateUserView(CreateAPIView):
+    model = User
+    permission_classes = [AllowAny]
+    serializer_class = UserSerializer
+    queryset = User.objects.all()
+
+
 class StockActionView(ListCreateAPIView):
+    
+    """ API for Buying and Selling a stock"""
     
     permission_classes = (AllowAny,)
     authentication_classes = ()
     serializer_class = StockaActionsSerializer
     queryset = StockActions.objects.all()
+    
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        return StockActions.objects.filter(user__id=user_id)
     
     def post(self, request, user_id):
         user = User.objects.get(id=user_id)
@@ -31,7 +45,6 @@ class StockActionView(ListCreateAPIView):
             
         serializer = StockaActionsSerializer(data=data)
         if serializer.is_valid():
-            # serializer.save(user=user)
             
             trade_type = serializer.validated_data['trade_type']
             quantity = serializer.validated_data['quantity']
@@ -45,6 +58,7 @@ class StockActionView(ListCreateAPIView):
             
             avg_buy_price = get_avg_buy_price(user_id)
             
+            #update the holdings table 
             hodling = Holding.objects.filter(user__id=user_id)
             if hodling.first() is not None:
                 hodling.update(
@@ -58,35 +72,15 @@ class StockActionView(ListCreateAPIView):
                                                 avg_buy_price=avg_buy_price)
                 holding.save()
                                 
-            return Response("success", status=status.HTTP_200_OK)
+            return Response("success", status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-
-class SplitActionView(ListCreateAPIView):
-    
-    permission_classes = (AllowAny,)
-    authentication_classes = ()
-    serializer_class = SpiltActionsSerializer
-    queryset = SplitAction.objects.all()
-    
-    def post(self, request,user_id):
-        user = User.objects.get(id=user_id)
-        data = JSONParser().parse(request)
-        serializer = SpiltActionsSerializer(data=data)
-        if serializer.is_valid():
-            ratio = serializer.validated_data['ratio']
-            serializer.save(user=user)
-            avg_buy_price = get_avg_buy_price(user_id)
-            holding = Holding.objects.filter(user__id=user_id).update(user=user,
-                                                quantity=F('quantity')*ratio,
-                                                avg_buy_price=avg_buy_price)
-            
-            return Response("sucess", status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-
+     
+     
+     
 def get_avg_buy_price(user_id):
+    
+    """ This functions calculates average buy price for a given the user_id"""
+    
     total_buy = StockActions.objects.filter(user__id=user_id).filter(trade_type='BUY').aggregate(Sum('quantity'))['quantity__sum']
     total_sell = StockActions.objects.filter(user__id=user_id).filter(trade_type='SELL').aggregate(Sum('quantity'))['quantity__sum']
     
@@ -115,10 +109,42 @@ def get_avg_buy_price(user_id):
     for split in splits:
         avg_buy_price /= split[0]
             
-    return avg_buy_price
+    return avg_buy_price   
+
+class SplitActionView(ListCreateAPIView):
+    
+    """API for adding spilt action ratio and updating the holdings table"""
+    
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+    serializer_class = SpiltActionsSerializer
+    
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        return SplitAction.objects.filter(user__id=user_id)
+    
+    def post(self, request,user_id):
+        user = User.objects.get(id=user_id)
+        data = JSONParser().parse(request)
+        serializer = SpiltActionsSerializer(data=data)
+        if serializer.is_valid():
+            ratio = serializer.validated_data['ratio']
+            serializer.save(user=user)
+            
+            avg_buy_price = get_avg_buy_price(user_id)
+            
+            #updatet holdings 
+            holding = Holding.objects.filter(user__id=user_id).update(user=user,
+                                                quantity=F('quantity')*ratio,
+                                                avg_buy_price=avg_buy_price)
+            
+            return Response("sucess", status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class AvgBuyPriceView(APIView):
+    """ API for reading average buy price for a given user_id"""
+    
     permission_classes = (AllowAny,)
     authentication_classes = ()
 
@@ -130,6 +156,7 @@ class AvgBuyPriceView(APIView):
         return Response(data,status=status.HTTP_200_OK)
     
 class HoldingView(ListAPIView):
+    """ Gives the holding values for a given user id"""
     permission_classes = (AllowAny,)
     authentication_classes = ()
     serializer_class = HoldingSerializer
